@@ -50,6 +50,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apitoken.middlewares.TokenMiddleware',
 ]
 
 ROOT_URLCONF = 'currency.urls'
@@ -133,3 +134,11 @@ EMAIL_HOST_USER = 'shankhanil.ghosh123@gmail.com'
 EMAIL_HOST_PASSWORD = 'ovbxdszhzidoluwt'
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
+
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
