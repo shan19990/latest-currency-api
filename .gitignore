@@ -1,0 +1,7 @@
+# Ignore files in the 'env' directory
+/env/
+
+# Optionally, ignore specific files within 'env' (adjust as needed)
+# /env/*.env
+# /env/*.ini
+# /env/*.conf
