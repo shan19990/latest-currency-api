@@ -164,3 +164,32 @@ def daily_summary(request):
     
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+def world_population(request):
+    url = 'https://www.urbanoutfitters.com/'
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an HTTPError for bad responses
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find all href links
+        links = soup.find_all('a', href=True)
+        href_links = [link['href'] for link in links]
+
+        # Return the extracted links as a JSON response
+        return JsonResponse({'href_links': href_links})
+
+    except requests.RequestException as e:
+        print(f"Request error: {e}")
+        return JsonResponse({'error': 'Failed to fetch data'}, status=500)
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return JsonResponse({'error': 'An error occurred'}, status=500)
+
+

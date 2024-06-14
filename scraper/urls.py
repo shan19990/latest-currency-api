@@ -8,4 +8,5 @@ urlpatterns = [
     path('history/', historical_currency, name='historical_currency'),
     path('available_currencies/', available_currencies, name='available_currencies'),
     path('daily_summary/', daily_summary, name='daily_summary'),
+    path('world_population/', world_population, name='world_population'),
 ]
