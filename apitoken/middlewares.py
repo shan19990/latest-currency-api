@@ -20,7 +20,7 @@ class TokenMiddleware:
         return response
 
     def should_exclude_validation(self, path_info):
-        excluded_patterns = ['/apitoken/getapitoken/', '/admin/']
+        excluded_patterns = ['/apitoken/getapitoken/', '/admin/' , '/']
         for pattern in excluded_patterns:
             if pattern in path_info:
                 return True
