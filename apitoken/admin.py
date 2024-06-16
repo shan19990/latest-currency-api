@@ -5,3 +5,4 @@ from .models import *
 
 admin.site.register(EmailModel)
 admin.site.register(APIToken)
+admin.site.register(DailyTokenUsage)

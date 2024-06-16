@@ -1,7 +1,127 @@
-# Ignore files in the 'env' directory
-/env/
+# Byte-compiled / optimized / DLL files
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
 
-# Optionally, ignore specific files within 'env' (adjust as needed)
-# /env/*.env
-# /env/*.ini
-# /env/*.conf
+# C extensions
+*.c
+
+# Distribution / packaging
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+bin/
+build/
+develop-eggs/
+dist/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Django stuff:
+*.log
+*.pot
+*.pyc
+__pycache__/
+db.sqlite3
+media/
+
+# If your Django project includes user-uploaded files in a specific directory
+media/
+
+# Django static files
+staticfiles/
+
+# If your build process includes temporary files
+build/
+*.stackdump
+
+# dotenv environment variables file
+.env
+
+# pyenv
+.python-version
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Pyright type checker
+.pyright/
+
+# Coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# VS Code
+.vscode/
+.history
+
+# JetBrains IDEs
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.nfs*
+
+# SQLite database
+*.sqlite3
+
+# Secrets and configurations
+secrets.json
+config/settings/local.py
+config/settings/local.yml
+config/settings/dev.py
+config/settings/dev.yml
+config/settings/test.py
+config/settings/test.yml

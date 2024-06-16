@@ -2,6 +2,7 @@ from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from datetime import date
+from django.utils import timezone
 
 
 # Create your models here.
@@ -29,3 +30,11 @@ def deactivate_expired_tokens(sender, instance, created, **kwargs):
         if date.today() > instance.expiry_date:
             instance.active = False
             instance.save()
+
+class DailyTokenUsage(models.Model):
+    token = models.ForeignKey(APIToken, on_delete=models.CASCADE)
+    date = models.DateField(default=timezone.now)
+    usage_count = models.IntegerField(default=0)
+    
+    class Meta:
+        unique_together = ('token', 'date')

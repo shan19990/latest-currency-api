@@ -5,6 +5,15 @@ from django.http import JsonResponse
 from ipware import get_client_ip
 import geoip2.database
 import os
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+import re
+
 
 def conversions(request):
     from_curr = request.GET.get('from_curr')
@@ -169,66 +178,6 @@ def daily_summary(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
-def world_population(request):
-    url = 'https://worldpopulationreview.com/'
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-
-    # Default parameters
-    default_number = 10  # Default number of rows to return
-    default_order = 'desc'  # Default order ('desc' for descending, 'asc' for ascending)
-
-    # Get parameters from request
-    number = int(request.GET.get('count', default_number))
-    order = request.GET.get('order', default_order)
-
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()  # Raise an HTTPError for bad responses
-        soup = BeautifulSoup(response.content, 'html.parser')
-
-        # Find the table containing countries and their populations
-        table = soup.find('table', class_='tp-table-body is-narrow w-full min-w-full table-auto border-separate border-spacing-0 border bg-white')
-        if table:
-            # Extract table rows (excluding header)
-            rows = table.find_all('tr')[1:]  # Skip header row
-
-            # List to store data
-            data = []
-
-            # Prepare list of tuples (country, population) for sorting
-            country_populations = []
-            for row in rows:
-                columns = row.find_all('td')
-                country = columns[0].text.strip()
-                population = columns[1].text.strip()
-                country_populations.append((country, population))
-
-            # Sort country_populations based on population in descending or ascending order
-            if order == 'desc':
-                country_populations.sort(key=lambda x: int(x[1].replace(',', '')), reverse=True)
-            elif order == 'asc':
-                country_populations.sort(key=lambda x: int(x[1].replace(',', '')))
-
-            # Extract sorted data up to the specified number
-            for i, (country, population) in enumerate(country_populations[:number]):
-                data.append({'Country': country, 'Population': population})
-
-            # Return the extracted data as JSON response
-            return JsonResponse({'data': data})
-
-        else:
-            return JsonResponse({'error': 'Table not found on the webpage.'}, status=404)
-
-    except requests.RequestException as e:
-        print(f"Request error: {e}")
-        return JsonResponse({'error': 'Failed to fetch data'}, status=500)
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return JsonResponse({'error': 'An error occurred'}, status=500)
 
 def country(request):
     # Check if 'country' parameter is provided in the request
@@ -607,3 +556,710 @@ def receive_location(request):
         return JsonResponse({
             'error': 'Method not allowed. Only GET requests are supported.'
         }, status=405)
+
+def ip_geolocation(request, ip_address):
+    try:
+        # Open the GeoLite2 database
+        with geoip2.database.Reader(GEOIP_DB_PATH) as reader:
+            # Retrieve location information for the IP address
+            response = reader.city(ip_address)
+
+            # Extract relevant location data
+            city = response.city.name
+            region = response.subdivisions.most_specific.name
+            country = response.country.name
+            postal_code = response.postal.code
+            latitude = response.location.latitude
+            longitude = response.location.longitude
+
+            # Construct JSON response
+            data = {
+                'ip_address': ip_address,
+                'city': city,
+                'region': region,
+                'country': country,
+                'postal_code': postal_code,
+                'latitude': latitude,
+                'longitude': longitude
+            }
+
+            return JsonResponse(data)
+
+    except geoip2.errors.AddressNotFoundError:
+        return JsonResponse({'error': 'Location not found for this IP address'}, status=404)
+
+    except Exception as e:
+        return JsonResponse({'error': f'An error occurred: {str(e)}'}, status=500)
+
+def world_population(request):
+    try:
+        # Setup WebDriver (Ensure you have ChromeDriver installed and in PATH)
+        options = webdriver.ChromeOptions()
+        driver = webdriver.Chrome(options=options)
+
+        # URL of the Worldometers world population page
+        url = "https://www.worldometers.info/"
+
+        # Open the URL
+        driver.get(url)
+
+        try:
+            # Find the 6th div element
+            div_elements = driver.find_elements(By.TAG_NAME, 'div')
+            if len(div_elements) >= 6:
+                target_div = div_elements[5]  # Index 5 corresponds to the 6th div element (zero-based index)
+
+                # Extract text content from the target div
+                div_text = target_div.text.strip()
+
+                # Split text content into lines and remove first and last line if they are headers/footers
+                lines = div_text.splitlines()[1:-1]
+
+                # Remove empty lines
+                lines = [line for line in lines if line.strip()]
+
+                # Filter out lines that match any category in categories_to_remove
+                categories_to_remove = [
+                    'GOVERNMENT & ECONOMICS',
+                    'SOCIETY & MEDIA',
+                    'ENVIRONMENT',
+                    'FOOD',
+                    'WATER',
+                    'ENERGY',
+                    'HEALTH'
+                ]
+                lines = [line for line in lines if not any(category in line for category in categories_to_remove)]
+
+                # Remove special characters like '$' and ',' from each line
+                cleaned_lines = []
+                for line in lines:
+                    cleaned_line = line.replace('$ ', '').replace(',', '').replace('-', '').replace(' tons', '').replace(' MWh', '')
+                    cleaned_lines.append(cleaned_line)
+
+                data = {}
+                i = 0
+                while i < len(cleaned_lines):
+                    if cleaned_lines[i].isdigit():
+                        value = cleaned_lines[i].strip()
+                        i += 1
+                        if i < len(cleaned_lines):
+                            key = cleaned_lines[i].strip()
+                            while i + 1 < len(cleaned_lines) and not cleaned_lines[i + 1].isdigit():
+                                i += 1
+                                key += " " + cleaned_lines[i].strip()
+                            data[key] = value
+                    else:
+                        key = cleaned_lines[i].strip()
+                        while i + 1 < len(cleaned_lines) and not cleaned_lines[i + 1].isdigit():
+                            i += 1
+                            key += " " + cleaned_lines[i].strip()
+                        i += 1
+                        if i < len(cleaned_lines):
+                            value = cleaned_lines[i].strip()
+                            data[key] = value
+                    i += 1
+
+                # Close the WebDriver
+                driver.quit()
+
+                # Return JSON response with the structured data
+                return JsonResponse({
+                    'data': data
+                })
+
+            else:
+                raise ValueError('There are less than 6 div elements on the page.')
+
+        except Exception as e:
+            return JsonResponse({'error': f'An error occurred: {str(e)}'}, status=500)
+
+    except Exception as e:
+        return JsonResponse({'error': f'An error occurred: {str(e)}'}, status=500)
+
+def world_top20_population(request):
+    # Setup WebDriver (Ensure you have ChromeDriver installed and in PATH)
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    url = 'https://www.worldometers.info/world-population/#top20'
+
+    try:
+        # Load the URL
+        driver.get(url)
+
+        # Wait for the page to load (adjust wait time as needed)
+        time.sleep(1)
+
+        # Find the div element by its unique class name
+        target_div = driver.find_element(By.CLASS_NAME, 'col-md-8')
+
+        # Extract text, class, and id attributes
+        data = target_div.text.strip()
+
+        data = data.split('\n')[1:-1]
+        
+        dict_data = []
+
+        for d in range(len(data)):
+            if d % 2 == 0:
+                rank = data[d].split(" ")[0]
+                country = data[d].split(" ")[1]
+                population = data[d+1]
+                
+                temp = {
+                    "rank":rank,
+                    "country":country,
+                    "population":population,
+                }
+                
+                dict_data.append(temp)
+
+    finally:
+        # Close the browser session
+        driver.quit()
+
+    # Return the div detail as JSON response
+    return JsonResponse({'data': dict_data},status=200)
+
+def country_population(request):
+    try:
+        country = request.GET.get('country').lower().replace(' ', '-')
+    except:
+        return JsonResponse({"error":"Please enter a valid country in URL"},status=400)
+    url = f"https://www.worldometers.info/world-population/{country}-population/"
+
+    print(url)
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+
+        time.sleep(1)
+
+        # Find all elements with class "maincounter-number"
+        elements = driver.find_elements(By.CLASS_NAME, 'maincounter-number')
+
+        if not elements :
+            return JsonResponse({"error":"Please enter a valid country in URL. Check out our Country list API and the code to fetch the live population of any country"},status=400)
+
+        # Extract text from each element
+        data = [element.text for element in elements]
+
+        if data[0] == "retrieving data..." :
+            return JsonResponse({"info":"Something went wrong, please try again after some time"})
+
+        # Return data as JSON response
+        return JsonResponse({'population': data},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
+
+def country_links(request):
+    try:
+        url = f"https://www.worldometers.info/world-population/population-by-country/"
+
+        options = webdriver.ChromeOptions()
+        # Uncomment the line below to run Chrome in headless mode (without opening a browser window)
+        # options.add_argument('--headless')
+        
+        driver = webdriver.Chrome(options=options)
+        
+
+        try:
+            driver.get(url)
+
+            time.sleep(1)
+
+            # Find the table element by its id "example2"
+            table = driver.find_element(By.ID, 'example2')
+
+            # Find all rows (tr elements) in the table
+            rows = table.find_elements(By.TAG_NAME, 'tr')
+
+            country_data_list = []
+
+            # Loop through each row, starting from the second row (index 1) to skip the header row
+            for row in rows[1:]:
+                # Find all columns (td elements) in the row
+                columns = row.find_elements(By.TAG_NAME, 'td')
+
+                # Ensure there are at least 2 columns (first column for country name and second column for link)
+                if len(columns) >= 3:
+                    # Extract text from the first column (country data)
+                    country_data = columns[1].text.strip()
+
+                    link_element = columns[1].find_element(By.TAG_NAME, 'a')
+                    country_link = link_element.get_attribute('href')
+                    print(country_link)
+                    parts = country_link.split("/")
+                    print(parts[-2])
+                    code = parts[-2].split("-p")[0]
+                    print(code)
+                    country_data_list.append({
+                        'country': country_data,
+                        'country_code': code
+                    })
+
+            # Return data as JSON response
+            return JsonResponse({'list': country_data_list},status=200)
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)},status=400)
+
+        finally:
+            driver.quit()
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)},status=400)
+
+def country_historican_statistic(request):
+    try:
+        country = request.GET.get('country').lower().replace(' ', '-')
+    except:
+        return JsonResponse({"error":"Please enter a valid country in URL"},status=400)
+    url = f"https://www.worldometers.info/world-population/{country}-population/"
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+
+        time.sleep(1)
+
+        # Find the table element by its class name
+        table = driver.find_element(By.CLASS_NAME, 'table-list')
+
+        # Find all rows (tr elements) in the table body
+        rows = table.find_elements(By.TAG_NAME, 'tr')
+
+        table_data = []
+
+        country_data = {
+            "Year": None,
+            "Population": None,
+            "Yearly % Change": None,
+            "Yearly Change": None,
+            "Migrants (net)": None,
+            "Median Age": None,
+            "Fertility Rate": None,
+            "Density (P/Km²)": None,
+            "Urban Pop %": None,
+            "Urban Population": None,
+            "Country's Share of World Pop": None,
+            "World Population": None,
+            "India Global Rank": None
+        }
+
+        # Iterate over each row and extract column data
+        for row in rows:
+            columns = row.find_elements(By.TAG_NAME, 'td')
+            if columns and len(columns) >= len(country_data):
+                row_data = {
+                    key: columns[index].text.strip() if columns[index].text.strip() != "" else None
+                    for index, key in enumerate(country_data.keys())
+                }
+                table_data.append(row_data)
+
+
+        # Return data as JSON response
+        return JsonResponse({'data': table_data},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
+
+def country_historical(request):
+    try:
+        country = request.GET.get('country').lower().replace(' ', '-')
+    except:
+        return JsonResponse({"error": "Please enter a valid country in the URL"},status=400)
+
+    url = f"https://www.worldometers.info/world-population/{country}-population/"
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+        print("Page loaded")
+
+        time.sleep(1)
+
+        # Find all tables on the page
+        tables = driver.find_elements(By.TAG_NAME, 'table')
+        print(f"Number of tables found: {len(tables)}")
+        
+        # Check if there are at least two tables on the page
+        if len(tables) < 2:
+            return JsonResponse({"error": "Could not find the second table on the page"},status=400)
+
+        # Select the second table (index 1)
+        table = tables[1]
+        #print(table.get_attribute('outerHTML'))
+
+        # Find all rows (tr elements) in the table body
+        rows = table.find_elements(By.TAG_NAME, 'tr')
+        print(f"Number of rows found: {len(rows)}")
+
+        table_data = []
+
+        # Regular expression pattern for extracting data from <td> tags
+        pattern = re.compile(r'<td>(.*?)</td>')
+
+        # Iterate over each row and extract column data
+        for index, row in enumerate(rows[1:]):  # Skip the header row
+            row_html = row.get_attribute('outerHTML')
+            matches = pattern.findall(row_html)
+            if len(matches) >= 2:
+                year = matches[0].strip()
+                population = matches[1].strip()
+                print(f"Year: {year}, Population: {population}")
+                if year and population:
+                    table_data.append({year: population})
+
+        # Return data as JSON response
+        return JsonResponse({'data': table_data},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        print(f"Error: {e}")
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
+        print("WebDriver session closed")
+
+def country_forecast_statistic(request):
+    try:
+        country = request.GET.get('country').lower().replace(' ', '-')
+    except:
+        return JsonResponse({"error":"Please enter a valid country in URL"},status=400)
+    url = f"https://www.worldometers.info/world-population/{country}-population/"
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+        time.sleep(1)
+
+        # Find all table elements by their class name
+        tables = driver.find_elements(By.CLASS_NAME, 'table-list')
+
+        if len(tables) < 2:
+            return JsonResponse({"error": "Could not find the 5th table with the class 'table-list'"},status=400)
+
+        # Select the 5th table (index 4)
+        table = tables[1]
+
+        # Find all rows (tr elements) in the table body
+        rows = table.find_elements(By.TAG_NAME, 'tr')
+
+        table_data = []
+
+        country_data_keys = [
+            "Year", "Population", "Yearly % Change", "Yearly Change", 
+            "Migrants (net)", "Median Age", "Fertility Rate", "Density (P/Km²)", 
+            "Urban Pop %", "Urban Population", "Country's Share of World Pop", 
+            "World Population", "India Global Rank"
+        ]
+
+        # Iterate over each row and extract column data
+        for row in rows[1:]:  # Skip the header row if there's one
+            columns = row.find_elements(By.TAG_NAME, 'td')
+            if columns and len(columns) >= len(country_data_keys):
+                row_data = {
+                    key: columns[index].text.strip() if columns[index].text.strip() != "" else None
+                    for index, key in enumerate(country_data_keys)
+                }
+                table_data.append(row_data)
+
+        # Return data as JSON response
+        return JsonResponse({'data': table_data},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
+
+def country_city_population(request):
+    try:
+        country = request.GET.get('country').lower().replace(' ', '-')
+    except:
+        return JsonResponse({"error":"Please enter a valid country in URL"},status=400)
+    url = f"https://www.worldometers.info/world-population/{country}-population/"
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+        time.sleep(1)
+
+        # Find all table elements by their class name
+        tables = driver.find_elements(By.CLASS_NAME, 'table-list')
+
+        if len(tables) < 3:
+            return JsonResponse({"error": "Could not find the 5th table with the class 'table-list'"},status=400)
+
+        # Select the 5th table (index 4)
+        table = tables[2]
+
+        # Find all rows (tr elements) in the table body
+        rows = table.find_elements(By.TAG_NAME, 'tr')
+
+        city_data = []
+
+        # Iterate over each row and extract column data
+        for row in rows[1:]:  # Skip the header row if there's one
+            columns = row.find_elements(By.TAG_NAME, 'td')
+            if columns and len(columns) >= 3:
+                rank = columns[0].text.strip()
+                city = columns[1].text.strip()
+                population = columns[2].text.strip()
+                if rank and city and population:
+                    city_data.append({"Rank": rank, "City": city, "Population": population})
+
+        # Return data as JSON response
+        return JsonResponse({'data': city_data},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
+
+def world_historical(request):
+    url = "https://www.worldometers.info/world-population/world-population-by-year/"
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+        time.sleep(1)
+
+        # Find the table with the specified class
+        table = driver.find_element(By.CSS_SELECTOR, '.table.table-hover.table-condensed')
+
+        # Find all rows (tr elements) in the table body
+        rows = table.find_elements(By.TAG_NAME, 'tr')
+
+        table_data = []
+
+        # Iterate over each row and extract column data
+        for row in rows[1:]:  # Skip the header row
+            columns = row.find_elements(By.TAG_NAME, 'td')
+            if columns and len(columns) >= 5:
+                year = columns[0].text.strip()
+                world_population = columns[1].text.strip()
+                yearly_change = columns[2].text.strip()
+                net_change = columns[3].text.strip()
+                density = columns[4].text.strip()
+                table_data.append({
+                    "Year": year,
+                    "World Population": world_population,
+                    "Yearly Change": yearly_change,
+                    "Net Change": net_change,
+                    "Density (P/Km²)": density
+                })
+
+        # Return data as JSON response
+        return JsonResponse({'data': table_data},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
+
+def world_forecast(request):
+    url = "https://www.worldometers.info/world-population/world-population-projections/"
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+        time.sleep(1)
+
+        # Find the table with the specified class
+        table = driver.find_element(By.CSS_SELECTOR, '.table.table-hover.table-condensed')
+
+        # Find all rows (tr elements) in the table body
+        rows = table.find_elements(By.TAG_NAME, 'tr')
+
+        table_data = []
+
+        # Iterate over each row and extract column data
+        for row in rows[1:]:  # Skip the header row
+            columns = row.find_elements(By.TAG_NAME, 'td')
+            if columns and len(columns) >= 5:
+                year = columns[0].text.strip()
+                world_population = columns[1].text.strip()
+                yearly_change = columns[2].text.strip()
+                net_change = columns[3].text.strip()
+                density = columns[4].text.strip()
+                table_data.append({
+                    "Year": year,
+                    "World Population": world_population,
+                    "Yearly Change": yearly_change,
+                    "Net Change": net_change,
+                    "Density (P/Km²)": density
+                })
+
+        # Return data as JSON response
+        return JsonResponse({'data': table_data},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
+
+def country_counts(request):
+    url = "https://www.worldometers.info/geography/how-many-countries-are-there-in-the-world/"
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+        time.sleep(1)
+
+        # Find the element with the specified class
+        counter = driver.find_element(By.CLASS_NAME, 'maincounter-number')
+
+        # Extract the text content
+        country_count = counter.text.strip()
+
+        # Return data as JSON response
+        return JsonResponse({'country_count': country_count},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
+
+def country_flags(request):
+    url = "https://www.worldometers.info/geography/flags-of-the-world/"
+
+    try:
+        # Send a GET request to the URL
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+
+        # Parse the HTML content
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        flag_data = {}
+
+        # Find all div elements with class="col-md-4"
+        flag_divs = soup.find_all('div', class_='col-md-4')
+
+        # Iterate over each div to extract country name and href
+        for div in flag_divs:
+            country_tag = div.find('div', style='font-weight:bold; padding-top:10px')
+            a_tag = div.find('a')
+
+            if country_tag and a_tag:
+                country = country_tag.text.strip()
+                href = a_tag.get('href')
+
+                # Adjust href to get full URL if needed
+                if href.startswith('/'):
+                    href = 'https://www.worldometers.info' + href
+
+                flag_data[country] = href
+
+        # Return data as JSON response
+        return JsonResponse({'flags': flag_data},status=200)
+
+    except requests.exceptions.RequestException as e:
+        # Handle HTTP request errors
+        return JsonResponse({'error': str(e)},status=400)
+
+    except Exception as e:
+        # Handle other exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+
+def crypto_currency(request):
+    url = "https://in.investing.com/crypto/currencies/"
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        # Load the URL
+        driver.get(url)
+        time.sleep(1)
+
+        # Find the table with the specified class
+        table = driver.find_element(By.CSS_SELECTOR, '.datatable_table__DE_1_')
+
+        print(table)
+
+        # Find all rows (tr elements) in the table body
+        rows = table.find_elements(By.TAG_NAME, 'tr')
+
+        table_data = []
+
+        # Iterate over each row and extract column data
+        for row in rows[1:]:  # Skip the header row
+            columns = row.find_elements(By.TAG_NAME, 'td')
+            if columns and len(columns) >= 5:
+                crypto = columns[3].text.strip()
+                parts = crypto.split('\n')
+                name = parts[0]
+                ticker = ''.join(filter(str.isalpha, parts[1]))
+                value = columns[4].text.strip()
+                table_data.append({
+                    "Crypto Currency": name,
+                    'Crypto':ticker,
+                    "Value":value,
+                })
+
+        # Return data as JSON response
+        return JsonResponse({'data': table_data},status=200)
+
+    except Exception as e:
+        # Handle exceptions
+        return JsonResponse({'error': str(e)},status=400)
+
+    finally:
+        # Close the WebDriver session
+        driver.quit()
