@@ -13,12 +13,16 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import re
+from .data import *
 
 
 def conversions(request):
-    from_curr = request.GET.get('from_curr')
-    amount = request.GET.get('amount')
-    url = f'https://www.x-rates.com/table/?from={from_curr}&amount={amount}'
+    try:
+        from_curr = request.GET.get('from')
+        amount = request.GET.get('amount')
+        url = f'https://www.x-rates.com/table/?from={from_curr}&amount={amount}'
+    except:
+        return JsonResponse({"error": "Please enter a 'from' currency code and a 'amount' value"}, status=400)
     
     try:
         response = requests.get(url)
@@ -34,6 +38,9 @@ def conversions(request):
                     currency = cols[0].text.strip()
                     rate = cols[1].text.strip()
                     data['tables'].append({'currency': currency, 'rate': rate})
+
+        if len(data['tables']) == 0:
+            return JsonResponse({'error': 'Please enter valid inputs'}, status=400)
 
         return JsonResponse(data)
     
@@ -44,8 +51,11 @@ def conversions(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def rates(request):
-    from_curr = request.GET.get('from_curr')
-    url = f'https://www.x-rates.com/table/?from={from_curr}&amount=1'
+    try:
+        from_curr = request.GET.get('from').lower()
+        url = f'https://www.x-rates.com/table/?from={from_curr}&amount=1'
+    except:
+        return JsonResponse({"error": "Please enter a 'from' currency code"}, status=400)
     
     try:
         response = requests.get(url)
@@ -62,6 +72,9 @@ def rates(request):
                     rate = cols[1].text.strip()
                     data['tables'].append({'currency': currency, 'rate': rate})
 
+        if len(data['tables']) == 0:
+            return JsonResponse({'error': 'Please enter valid inputs'}, status=400)
+
         return JsonResponse(data)
     
     except requests.RequestException as e:
@@ -71,10 +84,13 @@ def rates(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def exchange_rate(request):
-    from_curr = request.GET.get('from_curr')
-    to_curr = request.GET.get('to_curr')
-    amount = request.GET.get('amount')
-    url = f'https://www.x-rates.com/calculator/?from={from_curr}&to={to_curr}&amount={amount}'
+    try:
+        from_curr = request.GET.get('from')
+        to_curr = request.GET.get('to')
+        amount = request.GET.get('amount')
+        url = f'https://www.x-rates.com/calculator/?from={from_curr}&to={to_curr}&amount={amount}'
+    except:
+        return JsonResponse({"error": "Please enter a 'from' currency code, a 'to' currency code and a 'amount' value"}, status=400)
     
     try:
         response = requests.get(url)
@@ -82,6 +98,9 @@ def exchange_rate(request):
         data = {'title': soup.title.string, 'from_currency': from_curr, 'to_currency': to_curr, 'amount': amount, 'converted_amount': None}
         
         converted_amount = soup.find('span', class_='ccOutputTrail').previous_sibling.strip()
+        if converted_amount == "0.00":
+            return JsonResponse({'error': 'Please enter valid inputs'}, status=400)
+        
         data['converted_amount'] = converted_amount
 
         return JsonResponse(data)
@@ -93,10 +112,13 @@ def exchange_rate(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def historical_currency(request):
-    from_curr = request.GET.get('from_curr')
-    amount = request.GET.get('amount')
-    date = request.GET.get('date')
-    url = f'https://www.x-rates.com/historical/?from={from_curr}&amount={amount}&date={date}'
+    try:
+        from_curr = request.GET.get('from_curr')
+        amount = request.GET.get('amount')
+        date = request.GET.get('date')
+        url = f'https://www.x-rates.com/historical/?from={from_curr}&amount={amount}&date={date}'
+    except:
+        return JsonResponse({"error": "Please enter a 'from' currency code, a 'date' and a 'amount' value"}, status=400)
     
     try:
         response = requests.get(url)
@@ -112,6 +134,9 @@ def historical_currency(request):
                     currency = cols[0].text.strip()
                     rate = cols[1].text.strip()
                     data['tables'].append({'currency': currency, 'rate': rate})
+                
+                if currency == "0.00":
+                    return JsonResponse({'error': 'Please enter valid inputs'}, status=400)
 
         return JsonResponse(data)
     
@@ -123,7 +148,6 @@ def historical_currency(request):
 
 def available_currencies(request):
     url = 'https://www.x-rates.com/table/?from=USD'
-    
     try:
         response = requests.get(url)
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -147,8 +171,11 @@ def available_currencies(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def daily_summary(request):
-    date = request.GET.get('date')
-    url = f'https://www.x-rates.com/historical/?amount=1&date={date}'
+    try:
+        date = request.GET.get('date')
+        url = f'https://www.x-rates.com/historical/?amount=1&date={date}'
+    except:
+        return JsonResponse({"error": "Please enter a 'date' "}, status=400)
     
     try:
         response = requests.get(url)
@@ -213,6 +240,9 @@ def country(request):
                     category = columns[0].text.strip()
                     value = columns[1].text.strip()
                     data.append({category: value})
+            
+            if len(data):
+                pass
 
             # Return the extracted data as JSON response
             return JsonResponse({'country': country, 'data': data})
@@ -1222,7 +1252,7 @@ def crypto_currency(request):
 
     options = webdriver.ChromeOptions()
     driver = webdriver.Chrome(options=options)
-
+    
     try:
         # Load the URL
         driver.get(url)
@@ -1263,3 +1293,553 @@ def crypto_currency(request):
     finally:
         # Close the WebDriver session
         driver.quit()
+
+def crypto_currency_individual(request):
+    try:
+        crypto = request.GET.get('crypto').lower().replace(' ', '-')
+        url = f"https://in.investing.com/crypto/{crypto}/"
+    except Exception as e:
+        return JsonResponse({"error": "Please enter a valid crypto in URL"}, status=400)
+
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Chrome(options=options)
+
+    try:
+        driver.get(url)
+        time.sleep(1)
+
+        # Try to get data for a specific cryptocurrency
+        price_element = driver.find_element(By.CSS_SELECTOR, 'div[data-test="instrument-price-last"]')
+        price = price_element.text.strip()
+
+        return JsonResponse({'crypto': crypto, 'price': price}, status=200)
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    finally:
+        driver.quit()
+
+
+metals = {
+    "Aluminum": "al",
+    "Cobalt": "co",
+    "Copper": "cu",
+    "Gallium": "ga",
+    "Gold": "au",
+    "Indium": "in",
+    "Iridium": "ir",
+    "Iron Ore": "fe",
+    "Lead": "pb",
+    "Lithium": "li",
+    "Molybdenum": "mo",
+    "Neodymium": "nd",
+    "Nickel": "ni",
+    "Palladium": "pd",
+    "Platinum": "pt",
+    "Rhodium": "rh",
+    "Ruthenium": "ru",
+    "Silver": "ag",
+    "Steel Rebar": "st",
+    "Tellurium": "te",
+}
+
+units = {
+    "Pound": "lb",
+    "Metric Ton": "mt",
+    "Troy Ounce": "oz",
+    "Gram": "g",
+    "Kilogram": "kg",
+    "Short Ton": "t",
+}
+
+date_ranges = {
+    "1": "1",
+    "5": "5",
+    "10": "10",
+    "20": "20",
+}
+
+
+def commodities_metals(request):
+    try:
+        metal = request.GET.get('metal').lower()
+        unit = request.GET.get('unit').lower()
+        date_range = request.GET.get('date_range')
+
+        options = webdriver.ChromeOptions()
+        driver = webdriver.Chrome(options=options)
+
+        if not metal or not unit or not date_range:
+            return JsonResponse({
+                "error": "Please enter a 'metal', a 'unit' and a 'date_range'",
+                "metals": list(metals.keys()),
+                "units": list(units.keys()),
+                "date_ranges": list(date_ranges.values())
+            }, status=400)
+        
+        if not metal or not unit or not date_range:
+            return JsonResponse({"error": "Invalid parameters"}, status=400)
+
+        # Construct the URL
+        url = f"https://www.dailymetalprice.com/metalprices.php?c={metal}&u={unit}&d={date_range}"
+        options = webdriver.ChromeOptions()
+        driver = webdriver.Chrome(options=options)
+
+        try:
+            driver.get(url)
+            time.sleep(1)
+            
+            # Scrape the table data
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            table = soup.find('table', class_='table table-striped table-hover table-condensed success')
+
+            headers = [th.text.strip() for th in table.find_all('th')]
+            rows = []
+            for tr in table.find_all('tr')[1:]:  # Skip the header row
+                cells = [td.text.strip() for td in tr.find_all('td')]
+                print(cells)
+                cell = {
+                    "Date":cells[1],
+                    "Price":cells[0],
+                }
+                rows.append(cell)
+
+            return JsonResponse({"data": rows}, status=200)
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+        finally:
+            driver.quit()
+            
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+def commodities_metals_currency(request):
+    try:
+        country = request.GET.get('country').capitalize()
+        currency_code = country_currency_codes.get(country)
+
+        if not currency_code:
+            return JsonResponse({
+                "error": "Invalid or missing 'country' parameter",
+                "available_countries": list(country_currency_codes.keys())
+            }, status=400)
+
+        url = f"https://www.dailymetalprice.com/metalpricescurr.php?x={currency_code}"
+
+        options = webdriver.ChromeOptions()
+        driver = webdriver.Chrome(options=options)
+
+        try:
+            driver.get(url)
+            time.sleep(2)
+
+            # Scrape the first table
+            table = driver.find_element(By.CSS_SELECTOR, 'table.table.table-striped.table-hover.table-condensed.success')
+            rows = table.find_elements(By.TAG_NAME, 'tr')
+
+            table_data = []
+            headers = ["Commodity", "Price", "Unit", "Date"]
+
+            for row in rows[1:]:  # Skip the header row
+                columns = row.find_elements(By.TAG_NAME, 'td')
+                if len(columns) == 4:  # Ensure there are exactly 4 columns
+                    row_data = {
+                        headers[0]: columns[0].text.strip(),
+                        headers[1]: columns[1].text.strip(),
+                        headers[2]: columns[2].text.strip(),
+                        headers[3]: columns[3].text.strip(),
+                    }
+                    table_data.append(row_data)
+
+            return JsonResponse({'data': table_data}, status=200)
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+        finally:
+            driver.quit()
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+def time_capitals(request):
+    try:
+        url = "https://www.timeanddate.com/worldclock/?low=c"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        table = soup.find('table', class_='zebra fw tb-theme')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        table_data = []
+        for row in table.find_all('tr'):
+            columns = row.find_all(['th', 'td'])
+            if len(columns) >= 2:
+                city = columns[0].text.strip('*')
+                date = columns[1].text.strip().split()[1]
+                table_data.append({city: date})
+                city = columns[2].text.strip('*')
+                date = columns[3].text.strip().split()[1]
+                table_data.append({city: date})
+                try:
+                    city = columns[4].text.strip('*')
+                    date = columns[5].text.strip().split()[1]
+                    table_data.append({city: date})
+                except:
+                    pass
+
+        return JsonResponse({'data': table_data}, status=200)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+
+def time_popular(request):
+    try:
+        url = "https://www.timeanddate.com/worldclock/"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        table = soup.find('table', class_='zebra fw tb-theme')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        table_data = []
+        for row in table.find_all('tr'):
+            columns = row.find_all(['th', 'td'])
+            if len(columns) >= 2:
+                city = columns[0].text.strip('*')
+                date = columns[1].text.strip().split()[1]
+                table_data.append({city: date})
+                city = columns[2].text.strip('*')
+                date = columns[3].text.strip().split()[1]
+                table_data.append({city: date})
+                try:
+                    city = columns[4].text.strip('*')
+                    date = columns[5].text.strip().split()[1]
+                    table_data.append({city: date})
+                except:
+                    pass
+
+        return JsonResponse({'data': table_data}, status=200)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+def time_extended(request):
+    try:
+        url = "https://www.timeanddate.com/worldclock/full.html"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        table = soup.find('table', class_='zebra fw tb-theme')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        table_data = []
+        for row in table.find_all('tr'):
+            columns = row.find_all(['th', 'td'])
+            if len(columns) >= 2:
+                city = columns[0].text.strip('*')
+                date = columns[1].text.strip().split()[1]
+                table_data.append({city: date})
+                city = columns[2].text.strip('*')
+                date = columns[3].text.strip().split()[1]
+                table_data.append({city: date})
+                try:
+                    city = columns[4].text.strip('*')
+                    date = columns[5].text.strip().split()[1]
+                    table_data.append({city: date})
+                except:
+                    pass
+
+        return JsonResponse({'data': table_data}, status=200)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    
+def time_country(request):
+    try:
+        country = request.GET.get('country').lower().replace(' ', '-')
+        url = f"https://www.timeanddate.com/worldclock/{country}/"
+        print(url)
+    except Exception as e:
+        return JsonResponse({"error": "Please enter a valid crypto in URL"}, status=400)
+    
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    try:
+        table = soup.find('table', class_='zebra fw tb-wc zebra')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        table_data = []
+        for row in table.find_all('tr'):
+            columns = row.find_all(['th', 'td'])
+            if len(columns) >= 2:
+                city = columns[0].text.strip('*')
+                date = columns[1].text.strip().split()[1]
+                table_data.append({city: date})
+                city = columns[2].text.strip('*')
+                date = columns[3].text.strip().split()[1]
+                table_data.append({city: date})
+                try:
+                    city = columns[4].text.strip('*')
+                    date = columns[5].text.strip().split()[1]
+                    table_data.append({city: date})
+                except:
+                    pass
+
+        return JsonResponse({'data': table_data}, status=200)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    
+def time_country_city(request):
+    try:
+        country = request.GET.get('country', '').strip().lower().replace(' ', '-')
+        city = request.GET.get('city', '').strip().lower().replace(' ', '-')
+        if not country or not city:
+            return JsonResponse({"error": "Please provide both country and city names in the URL"}, status=400)
+
+        url = f"https://www.timeanddate.com/worldclock/{country}/{city}"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Extract time
+        div_qlook = soup.find('div', id='qlook', class_='bk-focus__qlook')
+        if not div_qlook:
+            return JsonResponse({"error": "Time information not found on the page"}, status=400)
+
+        span_time = div_qlook.find('span')
+        if not span_time:
+            return JsonResponse({"error": "Time span not found within div"}, status=400)
+
+        time = span_time.text.strip()
+
+        # Extract table data
+        table = soup.find('table', class_='table table--left table--inner-borders-rows')
+        if not table:
+            return JsonResponse({"error": "Details table not found on the page"}, status=400)
+
+        table_data = {}
+        rows = table.find_all('tr')
+        for row in rows:
+            columns = row.find_all(['th', 'td'])
+            if len(columns) == 2:
+                key = columns[0].text.strip().strip(':')
+                value = columns[1].text.strip()
+                table_data[key] = value
+
+        # Include time in the response
+        table_data['Time'] = time
+
+        return JsonResponse({'data': table_data}, status=200)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+def weather_capitals(request):
+    try:
+        url = "https://www.timeanddate.com/weather/?low=c"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find the table with class 'zebra fw tb-theme'
+        table = soup.find('table', class_='zebra fw tb-theme')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        table_data = []
+        rows = table.find_all('tr')
+
+        for row in rows[1:]:  # Skip the header row
+            columns = row.find_all('td')
+            if len(columns) >= 4:
+                city = columns[0].text.strip()
+                time = columns[1].text.strip()
+                temp = time.split(" ")[1]
+                weather = columns[2].text.strip()
+                temperature = columns[3].text.strip()
+                table_data.append({
+                    "city": city,
+                    "time": temp,
+                    "temperature": temperature
+                })
+
+        return JsonResponse({'data': table_data}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+
+def weather_popular(request):
+    try:
+        url = "https://www.timeanddate.com/weather/"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find the table with class 'zebra fw tb-theme'
+        table = soup.find('table', class_='zebra fw tb-theme')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        table_data = []
+        rows = table.find_all('tr')
+
+        print(rows)
+
+        for row in rows[1:]:  # Skip the header row
+            #print(row)
+            columns = row.find_all('td')
+            city = columns[0].text.strip()
+            time = columns[1].text.strip()
+            temp = time.split(" ")[1]
+            temperature = columns[3].text.strip()
+            table_data.append({
+                "city": city,
+                "time": temp,
+                "temperature": temperature
+            })
+
+        return JsonResponse({'data': table_data}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+def weather_extended(request):
+    try:
+        url = "https://www.timeanddate.com/weather/?low=5"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find the table with class 'zebra fw tb-theme'
+        table = soup.find('table', class_='zebra fw tb-theme')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        table_data = []
+        rows = table.find_all('tr')
+
+        print(rows)
+
+        for row in rows[1:]:  # Skip the header row
+            #print(row)
+            columns = row.find_all('td')
+            city = columns[0].text.strip()
+            time = columns[1].text.strip()
+            temp = time.split(" ")[1]
+            temperature = columns[3].text.strip()
+            table_data.append({
+                "city": city,
+                "time": temp,
+                "temperature": temperature
+            })
+
+        return JsonResponse({'data': table_data}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+def translate_date(hindi_date):
+    for hindi, english in translation_dict.items():
+        hindi_date = hindi_date.replace(hindi, english)
+    return hindi_date
+
+def weather_country_city_forecast(request):
+    try:
+        country = request.GET.get('country', '').strip().lower().replace(' ', '-')
+        city = request.GET.get('city', '').strip().lower().replace(' ', '-')
+
+        url = f"https://www.timeanddate.com/weather/{country}/{city}/ext"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        table = soup.find('table', class_='zebra')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        headers = []
+        table_data = []
+
+        # Extract headers
+        thead = table.find('thead')
+        if thead:
+            header_rows = thead.find_all('tr')
+            for header_row in header_rows:
+                headers = [th.get_text().strip() for th in header_row.find_all('th')]
+
+        # Extract data from rows
+        tbody = table.find('tbody')
+        if tbody:
+            rows = tbody.find_all('tr')
+            for row in rows:
+                columns = row.find_all('td')
+                row_header = row.find('th').get_text().strip() if row.find('th') else None
+                row_data = {}
+                if row_header:
+                    row_data["Date"] = translate_date(row_header)  # Include the date field from <th> element
+                for i, col in enumerate(columns):
+                    key = headers[i + 1] if i + 1 < len(headers) else f'Column {i + 1}'
+                    if key == "":
+                        key = "Wind Direction"
+                    if key == "Wind Direction" and col.find('span'):
+                        row_data[key] = col.find('span').get('title', '').strip()
+                    else:
+                        row_data[key] = col.get_text().strip()
+                table_data.append(row_data)
+
+        return JsonResponse({'data': table_data}, status=200)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+def weather_country_city_today(request):
+    try:
+        country = "india"  # Hardcoded for India
+        city = "kolkata"   # Hardcoded for Kolkata
+
+        url = f"https://www.timeanddate.com/weather/{country}/{city}/hourly"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        table = soup.find('table', class_='zebra')
+        if not table:
+            return JsonResponse({"error": "Table not found on the page"}, status=400)
+
+        headers = []
+        table_data = []
+
+        # Extract headers
+        thead = table.find('thead')
+        if thead:
+            header_rows = thead.find_all('tr')
+            for header_row in header_rows:
+                headers = [th.get_text().strip() for th in header_row.find_all('th')]
+
+        # Extract data from rows
+        tbody = table.find('tbody')
+        if tbody:
+            rows = tbody.find_all('tr')
+            for row in rows:
+                columns = row.find_all('td')
+                row_header = row.find('th').get_text().strip() if row.find('th') else None
+                row_data = {}
+                if row_header:
+                    row_data["Date"] = translate_date(row_header)  # Include the date field from <th> element
+                for i, col in enumerate(columns):
+                    key = headers[i + 1] if i + 1 < len(headers) else f'Column {i + 1}'
+                    if key == "":
+                        key = "Wind Direction"
+                    if key == "Wind Direction" and col.find('span'):
+                        row_data[key] = col.find('span').get('title', '').strip()
+                    else:
+                        row_data[key] = col.get_text().strip()
+                table_data.append(row_data)
+
+        return JsonResponse({'data': table_data}, status=200)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
